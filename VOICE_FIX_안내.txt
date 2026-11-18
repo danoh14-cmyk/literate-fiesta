@@ -1,0 +1,8 @@
+FIT TIMER v5.2 음성 수정
+- Android TextToSpeech 한국어 음성 엔진 연결
+- 운동 시작/휴식 전환/3,2,1 카운트다운/완료 안내
+- 음성 켜기/끄기 버튼 및 설정 저장
+- 웹 브라우저에서는 speechSynthesis 사용
+- 휴대전화 설정에서 한국어 TTS 음성 데이터 설치 및 미디어 볼륨 확인
+- GitHub에 FitTimer 폴더 변경 파일 업로드 후 Commit changes, Actions 빌드
+- 실제 APK 빌드는 미검증
