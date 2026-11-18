@@ -18,7 +18,7 @@ public class WorkoutService extends Service {
  private final Handler handler=new Handler(Looper.getMainLooper());
  private final ArrayList<Segment> segments=new ArrayList<>();
  private int index=0,remaining=0; private boolean running=false,completed=false;
- private long deadline=0; private String mode="음성 + 알림음";
+ private long deadline=0; private long activeStart=0, activeMillis=0; private long sessionStart=0; private String mode="음성 + 알림음";
  private TextToSpeech tts; private boolean ttsReady=false; private ToneGenerator tone;
  private PowerManager.WakeLock wakeLock;
  private static final String CHANNEL="fit_workout_clock";
@@ -30,18 +30,20 @@ public class WorkoutService extends Service {
  PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"FitTimer:WorkoutClock");wakeLock.setReferenceCounted(false);
  }
  @Override public int onStartCommand(Intent intent,int flags,int startId){if(intent==null){publish();return START_STICKY;}String command=intent.getStringExtra("command");if(command==null)command="query";
- switch(command){case "init":init(intent);break;case "play":if(completed)break;if(!running&&!segments.isEmpty()){running=true;deadline=SystemClock.elapsedRealtime()+remaining*1000L;hold();announce(segments.get(index).rest?"휴식 시작":segments.get(index).name+" 시작");}break;
- case "mode":mode=intent.getStringExtra("mode");break;case "pause":updateRemaining();running=false;release();break;
+ switch(command){case "init":init(intent);break;case "play":if(completed)break;if(!running&&!segments.isEmpty()){if(sessionStart==0)sessionStart=System.currentTimeMillis();activeStart=SystemClock.elapsedRealtime();running=true;deadline=SystemClock.elapsedRealtime()+remaining*1000L;hold();announce(segments.get(index).rest?"휴식 시작":segments.get(index).name+" 시작");}break;
+ case "mode":mode=intent.getStringExtra("mode");break;case "pause":updateRemaining();accumulate();running=false;release();break;
  case "next":advance();break;
- case "reset":running=false;release();index=0;completed=false;remaining=segments.isEmpty()?0:segments.get(0).seconds;break;
- case "stop":running=false;release();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return START_NOT_STICKY;
+ case "reset":accumulate();running=false;release();activeMillis=0;activeStart=0;sessionStart=0;index=0;completed=false;remaining=segments.isEmpty()?0:segments.get(0).seconds;break;
+ case "stop":accumulate();running=false;release();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return START_NOT_STICKY;
  }
  publish();return START_STICKY;}
- private void init(Intent intent){running=false;release();segments.clear();mode=intent.getStringExtra("mode");if(mode==null)mode="음성 + 알림음";
+ private void init(Intent intent){accumulate();running=false;release();activeMillis=0;activeStart=0;sessionStart=0;segments.clear();mode=intent.getStringExtra("mode");if(mode==null)mode="음성 + 알림음";
  try{JSONArray array=new JSONArray(intent.getStringExtra("plan"));for(int i=0;i<Math.min(array.length(),5000);i++)segments.add(new Segment(array.getJSONObject(i)));}catch(Exception ignored){}
  index=0;completed=false;remaining=segments.isEmpty()?0:segments.get(0).seconds;}
+ private void accumulate(){if(running&&activeStart>0){activeMillis+=Math.max(0,SystemClock.elapsedRealtime()-activeStart);activeStart=0;}}
+ private void recordSession(){try{long millis=activeMillis;long secs=millis/1000L;if(secs<=0)return;java.text.SimpleDateFormat fmt=new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.KOREA);JSONObject j=new JSONObject();j.put("date",fmt.format(new Date()));j.put("activeSeconds",secs);j.put("completedAt",System.currentTimeMillis());JSONArray existing=new JSONArray(getSharedPreferences("workout_history",0).getString("sessions","[]"));JSONArray next=new JSONArray();for(int i=Math.max(0,existing.length()-998);i<existing.length();i++)next.put(existing.get(i));next.put(j);getSharedPreferences("workout_history",0).edit().putString("sessions",next.toString()).apply();}catch(Exception ignored){}}
  private void updateRemaining(){if(running)remaining=Math.max(0,(int)Math.ceil((deadline-SystemClock.elapsedRealtime())/1000.0));}
- private void advance(){if(completed||segments.isEmpty())return;index++;if(index>=segments.size()){running=false;release();completed=true;remaining=0;announce("운동 완료. 수고하셨습니다");return;}
+ private void advance(){if(completed||segments.isEmpty())return;index++;if(index>=segments.size()){accumulate();running=false;release();completed=true;recordSession();remaining=0;announce("운동 완료. 수고하셨습니다");return;}
  Segment s=segments.get(index);remaining=s.seconds;if(running)deadline=SystemClock.elapsedRealtime()+remaining*1000L;announce(s.rest?"휴식 시작":s.name+" 시작");}
  private final Runnable ticker=new Runnable(){@Override public void run(){if(!running)return;long now=SystemClock.elapsedRealtime();int before=remaining;int transitions=0;while(running&&now>=deadline&&transitions++<5000){long overshoot=now-deadline;advance();if(running)deadline=now+Math.max(0,segments.get(index).seconds*1000L-overshoot);}
  if(running){remaining=Math.max(0,(int)Math.ceil((deadline-now)/1000.0));if(remaining!=before&&remaining>=1&&remaining<=3)announce(""+remaining);}
@@ -51,7 +53,7 @@ public class WorkoutService extends Service {
  private void announce(String s){if("무음".equals(mode))return;if(!"음성만".equals(mode)&&tone!=null)tone.startTone(ToneGenerator.TONE_PROP_BEEP,140);
  if(!"알림음만".equals(mode)&&ttsReady&&tts!=null)tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"workout_step");}
  private void publish(){handler.removeCallbacks(ticker);if(running)handler.postDelayed(ticker,200);
- Intent data=new Intent(ACTION_STATE).setPackage(getPackageName());data.putExtra("index",index);data.putExtra("remaining",remaining);data.putExtra("running",running);data.putExtra("completed",completed);sendBroadcast(data);
+ Intent data=new Intent(ACTION_STATE).setPackage(getPackageName());data.putExtra("hasPlan",!segments.isEmpty());data.putExtra("index",index);data.putExtra("remaining",remaining);data.putExtra("running",running);data.putExtra("completed",completed);sendBroadcast(data);
  String title=completed?"운동 완료":segments.isEmpty()?"운동 준비":segments.get(Math.min(index,segments.size()-1)).name;
  String time=String.format(Locale.KOREA,"%02d:%02d",remaining/60,remaining%60);
  Intent open=new Intent(this,MainActivity.class);open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP);
