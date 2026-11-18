@@ -4,11 +4,12 @@ name: Build FIT TIMER APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout source
@@ -20,24 +21,22 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build debug APK
+        working-directory: FitTimer
         run: |
           if [ -f gradlew ]; then
             chmod +x gradlew
-            ./gradlew assembleDebug
+            ./gradlew assembleDebug --stacktrace
           else
-            gradle assembleDebug
+            gradle assembleDebug --stacktrace
           fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: FitTimer-APK
-          path: '**/build/outputs/apk/debug/*.apk'
+          path: FitTimer/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
