@@ -1,6 +1,8 @@
 package com.fittimer.app;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.widget.Toast;
 import android.os.Bundle;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -19,6 +21,7 @@ import android.os.Looper;
 
 public class MainActivity extends Activity {
     private WebView webView;
+    private long lastBackPressedAt = 0L;
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -95,8 +98,19 @@ public class MainActivity extends Activity {
         webView.loadUrl("file:///android_asset/index.html");
     }
     @Override public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (now - lastBackPressedAt > 2000L) {
+            lastBackPressedAt = now;
+            Toast.makeText(this, "종료하려면 뒤로가기를 한 번 더 누르세요", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        lastBackPressedAt = 0L;
+        new AlertDialog.Builder(this)
+            .setTitle("FIT TIMER 종료")
+            .setMessage("종료하시겠습니까?")
+            .setPositiveButton("확인", (dialog, which) -> finish())
+            .setNegativeButton("취소", (dialog, which) -> dialog.dismiss())
+            .show();
     }
     @Override protected void onDestroy() {
         if (tts != null) { tts.stop(); tts.shutdown(); tts = null; }
