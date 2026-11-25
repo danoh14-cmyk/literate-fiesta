@@ -21,11 +21,23 @@ import android.os.Looper;
 
 public class MainActivity extends Activity {
     private WebView webView;
+    private android.media.ToneGenerator tone;
     private long lastBackPressedAt = 0L;
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     public class VoiceBridge {
+        @JavascriptInterface public void beep() {
+            mainHandler.post(() -> { try {
+                if (tone == null) tone = new android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 75);
+                tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 180);
+            } catch (RuntimeException ignored) {} });
+        }
+        @JavascriptInterface public void setLanguage(String language) {
+            mainHandler.post(() -> { if (ttsReady && tts != null) {
+                tts.setLanguage("en".equals(language) ? Locale.US : Locale.KOREAN);
+            }});
+        }
         @JavascriptInterface public void speak(String message) {
             mainHandler.post(() -> {
                 if (ttsReady && tts != null) {
@@ -43,7 +55,7 @@ public class MainActivity extends Activity {
             try {
                 java.util.Set<Voice> voices = tts.getVoices();
                 if (voices != null) for (Voice voice : voices) {
-                    if (!"ko".equals(voice.getLocale().getLanguage())) continue;
+                    if (!voice.getLocale().getLanguage().equals("en") && !voice.getLocale().getLanguage().equals("ko")) continue;
                     JSONObject item = new JSONObject();
                     item.put("id", voice.getName());
                     item.put("label", voice.getName());
@@ -61,7 +73,7 @@ public class MainActivity extends Activity {
                 if (voiceId != null && !voiceId.isEmpty()) {
                     try {
                         for (Voice v : tts.getVoices()) {
-                            if (v.getName().equals(voiceId) && "ko".equals(v.getLocale().getLanguage())) {
+                            if (v.getName().equals(voiceId) && ( "ko".equals(v.getLocale().getLanguage()) || "en".equals(v.getLocale().getLanguage()) )) {
                                 tts.setVoice(v); break;
                             }
                         }
@@ -113,6 +125,7 @@ public class MainActivity extends Activity {
             .show();
     }
     @Override protected void onDestroy() {
+        if (tone != null) { tone.release(); tone = null; }
         if (tts != null) { tts.stop(); tts.shutdown(); tts = null; }
         if (webView != null) { webView.destroy(); webView = null; }
         super.onDestroy();

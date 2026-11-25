@@ -1,6 +1,6 @@
 plugins { id 'com.android.application' }
 android {
     namespace 'com.fittimer.app'
-    compileSdk 35
-    defaultConfig { applicationId 'com.fittimer.app'; minSdk 26; targetSdk 35; versionCode 54; versionName '5.4' }
+    compileSdk 36
+    defaultConfig { applicationId 'com.fittimer.app'; minSdk 26; targetSdk 36; versionCode 56; versionName '5.6' }
 }

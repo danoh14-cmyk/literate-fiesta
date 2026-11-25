@@ -88,14 +88,18 @@ let voiceRate=Number(localStorage.getItem('fit_timer_voice_rate'))||voiceProfile
 let voicePitch=Number(localStorage.getItem('fit_timer_voice_pitch'))||voiceProfiles[voiceProfile]?.pitch||1.12;
 function configureFitVoice(){try{if(window.FitTimerVoice){window.FitTimerVoice.configure(voiceId,voiceRate,voicePitch)}}catch(e){}}
 function sayFit(message,preview=false){
+ message=(window.fitLanguage==='en' && window.fitTranslateSpeech)?window.fitTranslateSpeech(String(message)):message;
+ try{if(window.FitTimerVoice)window.FitTimerVoice.setLanguage(window.fitLanguage||'ko')}catch(e){}
  if(!voiceEnabled&&!preview)return;
  try{
   if(window.FitTimerVoice){configureFitVoice();window.FitTimerVoice.speak(String(message));return;}
-  if('speechSynthesis' in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(String(message));u.lang='ko-KR';u.rate=voiceRate;u.pitch=voicePitch;const voices=window.speechSynthesis.getVoices().filter(v=>v.lang.toLowerCase().startsWith('ko'));const found=voices.find(v=>v.name===voiceId);if(found)u.voice=found;window.speechSynthesis.speak(u);}
+  if('speechSynthesis' in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(String(message));u.lang=(window.fitLanguage==='en'?'en-US':'ko-KR');u.rate=voiceRate;u.pitch=voicePitch;const voices=window.speechSynthesis.getVoices().filter(v=>v.lang.toLowerCase().startsWith('ko'));const found=voices.find(v=>v.name===voiceId);if(found)u.voice=found;window.speechSynthesis.speak(u);}
  }catch(e){console.warn('음성 안내 실패',e)}
 }
 function silenceFit(){try{if(window.FitTimerVoice)window.FitTimerVoice.stop();else if('speechSynthesis' in window)window.speechSynthesis.cancel()}catch(e){}}
-function announceStep(){const s=steps[index];sayFit(s.rest?'휴식 '+s.seconds+'초':s.name+' '+s.seconds+'초 시작')}
+let beepContext;
+function exerciseBeep(){try{if(window.FitTimerVoice){window.FitTimerVoice.beep();return}const C=window.AudioContext||window.webkitAudioContext;if(!C)return;beepContext??=new C();beepContext.resume();const o=beepContext.createOscillator(),g=beepContext.createGain();o.frequency.value=880;g.gain.value=0.18;o.connect(g);g.connect(beepContext.destination);o.start();o.stop(beepContext.currentTime+0.18)}catch(e){}}
+function announceStep(){const s=steps[index];if(!s.rest&&s.seconds>0)exerciseBeep();sayFit(s.rest?'휴식 '+s.seconds+'초':s.name+' '+s.seconds+'초 시작')}
 function voiceOptions(){let vs=[];try{if(window.FitTimerVoice){vs=JSON.parse(window.FitTimerVoice.getVoices()||'[]')}else if('speechSynthesis' in window){vs=window.speechSynthesis.getVoices().filter(v=>v.lang.toLowerCase().startsWith('ko')).map(v=>({id:v.name,label:v.name,network:!v.localService}))}}catch(e){}return vs}
 function openVoiceSettings(){
  let modal=document.getElementById('fitVoiceModal');if(!modal){modal=document.createElement('div');modal.id='fitVoiceModal';document.body.appendChild(modal)}
@@ -120,9 +124,10 @@ function addVoiceControl(){const play=$('playBtn');if(!play||document.getElement
  const settings=document.createElement('button');settings.type='button';settings.className='btn';settings.id='voiceSettingsButton';settings.textContent='⚙ 음성 설정';settings.onclick=openVoiceSettings;
  play.insertAdjacentElement('afterend',btn);btn.insertAdjacentElement('afterend',settings);
 }
-function stop(){running=false;clearInterval(ticker);ticker=null;silenceFit()}function advance(){if(index<steps.length-1){index++;remaining=steps[index].seconds;renderTimer();announceStep()}else{const elapsed=Math.max(1,Math.round((Date.now()-startedAt)/60000));stop();state.history.unshift({date:new Date().toISOString(),minutes:elapsed,routine:state.routines.find(x=>x.id===state.activeRoutine)?.name||'자유 운동'});save();index=0;remaining=steps[0].seconds;renderTimer();sayFit('운동 완료! 수고하셨습니다');toast('🎉 운동 완료! 리포트에 기록했어요.')}}function play(){if(running){stop();renderTimer();return}if(steps[0].seconds===0){toast('운동 설정에서 운동을 선택해 주세요');return}if(!startedAt)startedAt=Date.now();running=true;renderTimer();announceStep();ticker=setInterval(()=>{
+function stop(){running=false;clearInterval(ticker);ticker=null;silenceFit()}function advance(){if(index<steps.length-1){index++;remaining=steps[index].seconds;renderTimer();announceStep()}else{const elapsed=Math.max(1,Math.round((Date.now()-startedAt)/60000));stop();state.history.unshift({date:new Date().toISOString(),minutes:elapsed,routine:state.routines.find(x=>x.id===state.activeRoutine)?.name||'자유 운동'});save();index=0;remaining=steps[0].seconds;renderTimer();sayFit('운동 완료! 수고하셨습니다');toast('🎉 운동 완료! 리포트에 기록했어요.')}}function play(){if(running){stop();renderTimer();return}if(steps[0].seconds===0){toast('운동 설정에서 운동을 선택해 주세요');return}if(!startedAt)startedAt=Date.now();running=true;renderTimer();if(remaining===steps[index].seconds)announceStep();ticker=setInterval(()=>{
  remaining--;
- if(remaining>0&&remaining<=3)sayFit(String(remaining));
+ if(!steps[index].rest&&(remaining===30||remaining===10))sayFit(window.fitLanguage==='en'?`${remaining} seconds remaining`:`${remaining}초 남았습니다`);
+ else if(remaining>0&&remaining<=3)sayFit(String(remaining));
  if(remaining<=0){advance()}renderTimer()
 },1000)}$('playBtn').onclick=play;addVoiceControl();$('skipBtn').onclick=()=>{advance();renderTimer()};$('resetBtn').onclick=()=>{stop();startedAt=0;build();toast('타이머 초기화')};$('expandBtn').onclick=()=>{expanded=!expanded;$('expandBtn').textContent=expanded?'접기':'전체 보기';renderTimer()};
 function setMode(m){settingsMode=m;document.querySelectorAll('#settingsSeg button').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));renderSettings()}$('settingsSeg').onclick=e=>{const b=e.target.closest('button');if(b)setMode(b.dataset.mode)};function renderSettings(){const c=$('settingsContent');if(settingsMode==='choose'){
@@ -203,4 +208,75 @@ function localDate(d){const x=new Date(d);return x.getFullYear()+'-'+String(x.ge
 const programs={strength:['스쿼트','팔굽혀펴기','런지','플랭크'],fat:['마운틴 클라이머','스쿼트','버피','플랭크'],core:['플랭크','레그레이즈','마운틴 클라이머','힙브리지'],mobility:['스쿼트','힙브리지','런지','플랭크']};$('generateProgram').onclick=()=>{const goal=$('aiGoal').value,level=$('aiLevel').value,minutes=+$('aiMinutes').value,days=+$('aiDays').value,exercise=programs[goal],dur=level==='beginner'?20:level==='intermediate'?35:45,rest=level==='beginner'?30:level==='intermediate'?20:15,rounds=Math.max(1,Math.min(5,Math.round(minutes*60/(exercise.length*(dur+rest))))),label=$('aiGoal').selectedOptions[0].text+' · '+$('aiLevel').selectedOptions[0].text;const program={name:'맞춤 '+label,exercises:exercise,rounds,duration:dur,rest};$('aiResult').innerHTML=`<div class="card"><div class="title">✦ 추천 프로그램 <span class="pill">주 ${days}회</span></div><div class="eyebrow">${safe(label)}</div><p class="sub">약 ${minutes}분 운동 가능 시간 기준 · 운동 ${dur}초 / 휴식 ${rest}초 / ${rounds}라운드</p><div class="list">${exercise.map((x,i)=>`<div class="item"><span class="num">${i+1}</span><span class="label">${safe(x)}</span><span class="desc">${dur}초</span></div>`).join('')}</div><p class="note">운동 사이에 회복일을 배치하고, 동작이 힘들면 시간과 라운드를 줄이세요. 실제 예상 소요 시간은 선택한 조건에 따라 다를 수 있습니다.</p><button class="btn hot" id="useAi" style="width:100%">✓ 운동 설정에 적용하고 저장</button></div>`;$('useAi').onclick=()=>{state.selected=[...program.exercises];state.duration=program.duration;state.rest=program.rest;state.rounds=program.rounds;const id=Date.now();state.routines.push({...program,id});state.activeRoutine=id;save();stop();build();toast('추천 프로그램을 저장했어요');tab('timer')}};
 function renderReports(){const total=state.history.length,mins=state.history.reduce((s,x)=>s+(x.minutes||0),0);$('statCount').textContent=total+'회';$('statTime').textContent=mins+'분';$('statGoal').textContent=Math.round(Math.min(1,weekCount()/state.goal)*100)+'%';const days=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(6-i));return localDate(d)}),counts=days.map(d=>state.history.filter(h=>h.date.slice(0,10)===d).length),max=Math.max(1,...counts);$('reportBars').innerHTML=days.map((d,i)=>`<div class="barwrap"><div>${counts[i]}</div><div class="bar" style="height:${Math.max(2,counts[i]/max*104)}px"></div><div>${['일','월','화','수','목','금','토'][new Date(d+'T12:00:00').getDay()]}</div></div>`).join('');$('historyList').innerHTML=state.history.length?state.history.slice(0,20).map(h=>`<div class="item"><span class="num">✓</span><span class="label">${safe(h.routine)}</span><span class="desc">${safe(h.date.slice(0,10))} · ${h.minutes}분</span></div>`).join(''):'<p class="sub">아직 완료한 운동이 없습니다. 타이머에서 운동을 완료하면 자동으로 기록됩니다.</p>'}
 renderSettings();renderGuide();build();renderSchedule();renderReports();})();
+</script><style id="fitGlobalStyle">#fitLanguageSelect{background:#101f31;color:#fff;border:1px solid #ff991f;border-radius:10px;padding:8px 10px;font-weight:700;max-width:180px}#fitGlobalBar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:8px 0 12px;color:#f9a33e;font-size:13px}</style>
+<script id="fitGlobalScript">
+(function(){
+ const dict={
+ '타이머':'Timer','운동 설정':'Workout Setup','동작 가이드':'Exercise Guide','일정 및 목표':'Schedule & Goals','AI 맞춤 운동':'AI Workout','리포트':'Reports',
+ '운동 시작':'Start Workout','시작':'Start','일시정지':'Pause','계속':'Resume','정지':'Stop','초기화':'Reset','다음':'Next','이전':'Back','저장':'Save','취소':'Cancel','확인':'Confirm','닫기':'Close','추가':'Add','삭제':'Delete','수정':'Edit','완료':'Done',
+ '휴식':'Rest','운동':'Exercise','세트':'Sets','라운드':'Rounds','초':'sec','분':'min','시간':'Time','운동 시간':'Exercise Time','휴식 시간':'Rest Time','운동 사이 휴식시간':'Rest Between Exercises','세트 사이 휴식':'Rest Between Sets',
+ '루틴':'Routine','운동 루틴':'Workout Routine','내 루틴':'My Routines','루틴 저장':'Save Routine','운동 선택':'Select Exercise','운동 목록':'Exercise List',
+ '스쿼트':'Squat','플랭크':'Plank','푸시업':'Push-up','팔굽혀펴기':'Push-up','윗몸일으키기':'Sit-up','크런치':'Crunch','런지':'Lunge','버피':'Burpee','점핑잭':'Jumping Jack','마운틴 클라이머':'Mountain Climber','레그레이즈':'Leg Raise',
+ '오늘':'Today','이번 주':'This Week','이번 달':'This Month','목표':'Goals','운동 기록':'Workout History','운동 완료':'Workout Complete','총 운동 시간':'Total Workout Time',
+ '⚙ 음성 설정':'⚙ Voice Settings','음성 설정':'Voice Settings','음성 켜짐':'Voice On','음성 꺼짐':'Voice Off','목소리 미리 듣기':'Preview Voice','미리 듣기':'Preview','설정 저장':'Save Settings','음성 스타일':'Voice Style','말하기 속도':'Speaking Rate','음높이':'Pitch',
+ '차분한 여성 느낌':'Calm Voice','밝고 활기찬 느낌':'Energetic Voice','기본 안내':'Standard Voice','낮고 안정적인 느낌':'Deep Voice',
+ '종료하시겠습니까?':'Do you want to exit?','FIT TIMER 종료':'Exit FIT TIMER','운동을 선택하세요':'Select an exercise',
+ '운동을 시작할 준비가 되셨나요?':'Are you ready to work out?','안녕하세요. FIT TIMER입니다. 운동을 시작할 준비가 되셨나요?':'Hello, this is FIT TIMER. Are you ready to work out?',
+ '운동 종료':'Workout Finished','설정':'Settings','한국어':'Korean','영어':'English','언어':'Language','자동':'Auto',
+ '운동 준비':'Get Ready','시작하기':'Get Started','진행 중':'In Progress','통계':'Statistics','운동 가이드':'Workout Guide',
+ '운동을 선택해 주세요':'Please select an exercise','기록 없음':'No records','오늘의 운동':'Today’s Workout'
+ };
+ const speech=(s)=>{
+  let v=s;
+  Object.entries(dict).sort((a,b)=>b[0].length-a[0].length).forEach(([ko,en])=>{v=v.split(ko).join(en)});
+  v=v.replace(/(\d+)sec/g,'$1 seconds').replace(/(\d+)min/g,'$1 minutes');
+  return v;
+ };
+ window.fitTranslateSpeech=speech;
+ const stored=localStorage.getItem('fit_timer_language')||'auto';
+ const detected=((navigator.languages&&navigator.languages[0])||navigator.language||'ko').toLowerCase().startsWith('ko')?'ko':'en';
+ let mode=stored;
+ window.fitLanguage=mode==='auto'?detected:mode;
+ const originals=new WeakMap();
+ const skip=n=>n.parentElement&&n.parentElement.closest('script,style,textarea,input,select,option,[contenteditable="true"],#fitGlobalBar');
+ function render(){
+  document.documentElement.lang=window.fitLanguage;
+  const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+  let node;
+  while((node=walk.nextNode())){
+   if(skip(node))continue;
+   const raw=node.nodeValue;
+   if(!raw.trim())continue;
+   const old=originals.get(node);
+   // Keep original Korean source, including after DOM re-render.
+   const source=(old&&old.last===raw)?old.source:raw;
+   const trimmed=source.trim();
+   let converted=source;
+   if(window.fitLanguage==='en'){
+     if(dict[trimmed]) converted=source.replace(trimmed,dict[trimmed]);
+     else if(/^(?:[\s\d·:|/()\-+.,!%]|[가-힣])+$/.test(trimmed)&&trimmed.length<65) converted=source.replace(trimmed,speech(trimmed));
+   }
+   originals.set(node,{source,last:converted});
+   if(converted!==raw)node.nodeValue=converted;
+  }
+  document.querySelectorAll('[placeholder]').forEach(el=>{
+   if(!el.dataset.fitOriginalPlaceholder)el.dataset.fitOriginalPlaceholder=el.placeholder;
+   const x=el.dataset.fitOriginalPlaceholder;el.placeholder=window.fitLanguage==='en'?speech(x):x;
+  });
+ }
+ function setLanguage(next){mode=next;localStorage.setItem('fit_timer_language',next);window.fitLanguage=next==='auto'?detected:next;render();try{window.FitTimerVoice?.setLanguage(window.fitLanguage)}catch(e){};const label=document.getElementById('fitLanguageSelect');if(label)label.value=next;}
+ function boot(){
+  const header=document.querySelector('.masthead')||document.querySelector('header')||document.body;
+  const bar=document.createElement('div');bar.id='fitGlobalBar';
+  bar.innerHTML='<label for="fitLanguageSelect">🌐 <span id="fitLangLabel">Language / 언어</span></label><select id="fitLanguageSelect" aria-label="Language"><option value="auto">Auto / 자동</option><option value="ko">한국어</option><option value="en">English</option></select>';
+  header.insertAdjacentElement('afterend',bar);
+  bar.querySelector('select').value=mode;bar.querySelector('select').addEventListener('change',e=>setLanguage(e.target.value));
+  let busy=false;
+  const observer=new MutationObserver(()=>{if(busy)return;busy=true;requestAnimationFrame(()=>{render();busy=false})});
+  observer.observe(document.body,{subtree:true,childList:true,characterData:true});
+  render();try{window.FitTimerVoice?.setLanguage(window.fitLanguage)}catch(e){}
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+ window.fitSetLanguage=setLanguage;
+})();
 </script></body></html>
